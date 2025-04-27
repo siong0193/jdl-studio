@@ -2,7 +2,7 @@ name: JDL Studio CI/CD
 
 on:
   push:
-    branches: [ src, feature/change-color ]
+    branches: [ src ]
     tags: [ 'v*' ]
   pull_request:
     branches: [ src ]
@@ -53,7 +53,7 @@ jobs:
     name: Build and Deploy
     needs: install-and-test
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/src'
+    if: github.ref == github.ref == 'refs/heads/src'
     steps:
       - uses: actions/checkout@v4
       
