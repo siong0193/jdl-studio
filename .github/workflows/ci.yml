@@ -1,0 +1,107 @@
+name: JDL Studio CI/CD
+
+on:
+  push:
+    branches: [ src, feature/change-color ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ src ]
+
+env:
+  NODE_VERSION: 18
+  CI: true
+
+jobs:
+  install-and-test:
+    name: Install and Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run coverage tests
+        run: |
+          mkdir -p coverage
+          if [ "$GITHUB_REF" == "refs/heads/src" ]; then
+            npm run test:update-snapshot
+          fi
+          npm run test:coverage
+      
+      - name: Verify coverage directory
+        if: github.ref != 'refs/heads/src'
+        run: |
+          if [ ! -d "coverage" ]; then
+            echo "❌ Coverage directory not found!"
+            exit 1
+          fi
+      
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage/*
+
+  build-and-deploy:
+    name: Build and Deploy
+    needs: install-and-test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/src'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build project
+        run: npm run build
+
+      - name: Verify dist files
+        run: ls -la dist/
+      
+      - name: Install server dependencies (express)
+        run: |
+          if ! grep -q "express" package.json; then
+            npm install express
+          fi
+      
+      - name: Verify server.js file
+        run: |
+          if [ ! -f "server.js" ]; then
+            echo "❌ server.js not found!"
+            exit 1
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Build Docker image
+        run: |
+          docker build -t jdl-studio:latest .
+          docker save -o jdl-studio.tar jdl-studio:latest
+
+      - name: Verify Docker container runs correctly
+        run: |
+          docker load -i jdl-studio.tar
+          docker run -d --name jdl-studio-test -p 3000:3000 jdl-studio:latest
+          sleep 5
+          docker ps
+          docker logs jdl-studio-test
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: jdl-studio.tar
